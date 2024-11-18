@@ -1,0 +1,31 @@
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.env
+
+# SQLite database
+*.db
+
+# Virtual environment
+venv/
+.env/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Byte-compiled files
+*.pyc
+
+# Editor backups
+*.swp
+*.swo
+
+# VSCode project files
+.vscode/
+
+.env
