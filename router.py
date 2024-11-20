@@ -1,16 +1,20 @@
-from aiogram import Router, types
+from aiogram import Router, types, Bot
 from aiogram.filters import Command, CommandStart
 from request import get_exchange_rate
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 
 router = Router()
-
+scheduler = AsyncIOScheduler()
+user_thresholds = {}
 
 keyboard = ReplyKeyboardMarkup(
     keyboard=[
+        [KeyboardButton(text="Вывести курс популярных валют")],
+        [KeyboardButton(text="Установить порог для отслеживания курса")],
         [KeyboardButton(text="Выбрать валюту")],
         [KeyboardButton(text="Помощь")]
     ],
@@ -18,20 +22,65 @@ keyboard = ReplyKeyboardMarkup(
 )
 
 
+class CurrencieState(StatesGroup):
+    currency = State()
+    threshold = State()
+
+
 @router.message(CommandStart())
 async def start(message: types.Message):
     await message.answer("Привет! Я могу предоставить информацию о курсах валют. Используй команду /rate для получения текущих курсов.", reply_markup=keyboard)
 
 
-@router.message(Command('rate'))
+@router.message(lambda message: message.text == "Вывести курс популярных валют" or message.text == "/rate")
 async def get_rate(message: types.Message):
     rates = get_exchange_rate()
     result = 'Курсы популярных валют:\n'
     selected_currencies = ["EUR", "GBP", "JPY", "RUB"]
     for currency in selected_currencies:
-        result += f"{currency}: {rates.get(currency, 'нет данных')}\n"
+        result += f"{currency}: {round(rates.get(currency, 'нет данных'), 2)}\n"
     
     await message.answer(result)
+
+
+@router.message(lambda message: message.text == "Установить порог для отслеживания курса")
+async def set_threshold_step1(message: types.Message, state: FSMContext):
+    await message.answer("Введите код валюты, например, EUR:")
+    await state.set_state(CurrencieState.currency)
+
+
+@router.message(CurrencieState.currency)
+async def set_threshold_step2(message: types.Message, state: FSMContext):
+    await state.update_data(currency=message.text.upper())
+    await message.answer("Теперь введите пороговое значение:")
+    await state.set_state(CurrencieState.threshold)
+
+
+@router.message(CurrencieState.threshold)
+async def set_threshold_step3(message: types.Message, state: FSMContext):
+    try:
+        threshold = float(message.text)
+        user_data = await state.get_data()
+        currency = user_data["currency"]
+        user_id = message.from_user.id
+
+        if user_id not in user_thresholds:
+            user_thresholds[user_id] = {}
+        user_thresholds[user_id][currency] = threshold
+
+        await message.answer(f"Порог для {currency} установлен на {threshold}.")
+        await state.clear()
+    except ValueError:
+        await message.answer("Пожалуйста, введите числовое значение.")
+
+
+async def check_thresholds(bot: Bot):
+    rates = get_exchange_rate()
+    for user_id, thresholds in user_thresholds.items():
+        for currency, threshold in thresholds.items():
+            current_rate = rates.get(currency)
+            if current_rate and current_rate < threshold:
+                await bot.send_message(user_id, f"⚠️ Курс {currency} упал ниже {threshold}: сейчас {round(current_rate, 2)}")
 
 
 async def inline_button_handler():
@@ -58,7 +107,7 @@ async def get_currencie(callback_query: types.CallbackQuery):
     currency = callback_query.data.split(":")[1]
     rates = get_exchange_rate()
     rate = rates.get(currency, "Неизвестная валюта")
-    await callback_query.message.edit_text(f"Курс {currency}: {rate}")
+    await callback_query.message.edit_text(f"Курс {currency}: {round(rate, 2)}")
 
 
 @router.message(lambda message: message.text == "Помощь" or message.text == "/help")

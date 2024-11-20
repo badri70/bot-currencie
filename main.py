@@ -2,7 +2,7 @@ import os
 import asyncio
 from aiogram import Dispatcher, Bot
 from dotenv import load_dotenv
-from router import router
+from router import router, scheduler, check_thresholds
 
 
 load_dotenv()
@@ -11,8 +11,11 @@ dp = Dispatcher()
 
 
 async def main():
-    dp.include_router(router=router)
+    dp.include_router(router)
+    scheduler.add_job(check_thresholds, "interval", minutes=10, args=[bot])
+    scheduler.start()
     await dp.start_polling(bot)
+
 
 
 if __name__ == "__main__":
